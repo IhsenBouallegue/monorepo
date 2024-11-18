@@ -55,7 +55,6 @@ export async function mockChanges(args: {
 		.selectFrom("change")
 		.innerJoin("snapshot", "change.snapshot_id", "snapshot.id")
 		.selectAll("change")
-		.where(changeIsLeaf())
 		.select("snapshot.content")
 		.execute();
 

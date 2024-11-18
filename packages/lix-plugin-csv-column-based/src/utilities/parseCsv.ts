@@ -12,31 +12,28 @@ import * as papaparse from "papaparse";
  *   const parsed = parseCsv(data, "name");
  *
  *   console.log(parsed); // { "alice": { age: "23", name: "alice"}, "bob": { age: "56", name: "bob"} }
- *   console.log(parsed['bob']) // { age: "56", name: "bob"}
+ *   console.log(parsed['bob']) // ["56", "bob"]
  *
  *   ```
  */
-export function parseCsv(data: ArrayBuffer, uniqueColumn: string) {
+export function parseCsv(
+	data: ArrayBuffer | undefined,
+	uniqueColumn: string,
+): [Record<string, Record<string, string>> | undefined, string[]] {
 	const parsed = data
 		? papaparse.parse(new TextDecoder().decode(data), {
 				skipEmptyLines: true,
 			})
 		: undefined;
 
-	const rowOrder: string[] = [];
-	const recordsById: Record<string, Record<string, string>> = {};
+	const index: Record<string, Record<string, string>> = {};
 	const headerRow = parsed?.data?.[0] as string[];
 	if (!headerRow) {
-		throw new Error("No Header row found");
+		return [undefined, headerRow];
 	}
 	const uniqueColumnIndex = headerRow.indexOf(uniqueColumn);
 	if (uniqueColumnIndex === undefined) {
-		throw new Error(
-			"Couldn't find the unque column " +
-				uniqueColumn +
-				" in the header row " +
-				headerRow.join(","),
-		);
+		return [undefined, headerRow];
 	}
 	let isHeaderRow = true;
 	for (const row of (parsed?.data as Array<string[]>) ?? []) {
@@ -50,26 +47,12 @@ export function parseCsv(data: ArrayBuffer, uniqueColumn: string) {
 			const entity_id = `${uniqueColumn}|${uniqueValue}`;
 
 			for (const [columnI, value] of row.entries()) {
-				if (!recordsById[entity_id]) {
-					recordsById[entity_id] = {};
+				if (!index[entity_id]) {
+					index[entity_id] = {};
 				}
-				recordsById[entity_id]![headerRow[columnI]!] = value;
+				index[entity_id]![headerRow[columnI]!] = value;
 			}
-
-			if (rowOrder.includes(entity_id)) {
-				throw new Error(
-					"Duplicated entry " +
-						entity_id +
-						" in unique column " +
-						uniqueColumn +
-						"  detected (Row=" +
-						rowOrder.length +
-						")",
-				);
-			}
-			rowOrder.push(entity_id);
 		}
 	}
-
-	return { recordsById, headerRow, rowOrder };
+	return [index, headerRow];
 }
