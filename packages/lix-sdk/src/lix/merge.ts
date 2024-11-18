@@ -1,5 +1,7 @@
 import type { Lix } from "./open-lix.js";
-import { getLeafChangesOnlyInSource } from "../query-utilities/get-leaf-changes-only-in-source.js";
+import { getLeafChangesOnlyInSource } from "./merge.get-leaf-changes-only-in-source.js";
+import { withSkipChangeQueue } from "../change-queue/with-skip-change-queue.js";
+import type { DetectedConflict } from "../plugin/lix-plugin.js";
 
 /**
  * Combined the changes of the source lix into the target lix.
@@ -35,11 +37,13 @@ export async function merge(args: {
 		throw new Error("Unimplemented. Only one plugin is supported for now");
 	}
 
-	const conflicts =
-		(await plugin?.detectConflicts?.({
-			sourceLix: args.sourceLix,
-			targetLix: args.targetLix,
-		})) ?? [];
+	const conflicts: DetectedConflict[] =
+		// (await plugin?.detectConflicts?.({
+		// 	sourceLix: args.sourceLix,
+		// 	targetLix: args.targetLix,
+		// })) ??
+
+		[];
 
 	const changesPerFile: Record<string, ArrayBuffer> = {};
 
@@ -49,8 +53,11 @@ export async function merge(args: {
 		// 3. apply non conflicting leaf changes
 		// TODO inefficient double looping
 		const nonConflictingLeafChangesInSourceForFile = leafChangesOnlyInSource
-			.filter((c) =>
-				conflicts.every((conflict) => conflict.conflicting_change_id !== c.id),
+			.filter((sourceChange) =>
+				conflicts.every(
+					(conflict) =>
+						conflict.conflictingChangeIds.has(sourceChange.id) === false,
+				),
 			)
 			.filter((c) => c.file_id === fileId);
 
@@ -66,18 +73,23 @@ export async function merge(args: {
 				.selectFrom("file")
 				.selectAll()
 				.where("id", "=", fileId)
-				.executeTakeFirstOrThrow();
-
-			const fileToInsert = {
-				id: file.id,
-				path: file.path,
-				data: file.data,
-				metadata: file.metadata,
-			};
-			await args.targetLix.db
-				.insertInto("file_internal")
-				.values(fileToInsert)
 				.executeTakeFirst();
+
+			if (file) {
+				const fileToInsert = {
+					id: file.id,
+					path: file.path,
+					data: file.data,
+					metadata: file.metadata,
+				};
+
+				await withSkipChangeQueue(args.targetLix.db, async (trx) => {
+					await trx
+						.insertInto("file")
+						.values({ ...fileToInsert })
+						.executeTakeFirst();
+				});
+			}
 		}
 
 		if (!plugin?.applyChanges) {
@@ -86,6 +98,7 @@ export async function merge(args: {
 
 		const { fileData } = await plugin.applyChanges({
 			changes: nonConflictingLeafChangesInSourceForFile,
+			// @ts-expect-error - TODO apply changes can be an undefined file
 			file,
 			lix: args.targetLix,
 		});
@@ -114,7 +127,7 @@ export async function merge(args: {
 	// change graph
 
 	const sourceEdges = await args.sourceLix.db
-		.selectFrom("change_graph_edge")
+		.selectFrom("change_edge")
 		.selectAll()
 		.execute();
 
@@ -160,27 +173,29 @@ export async function merge(args: {
 
 		// insert the conflicts of those changes
 		if (conflicts.length > 0) {
-			await trx
-				.insertInto("conflict")
-				.values(conflicts)
-				// ignore if already exists
-				.onConflict((oc) => oc.doNothing())
-				.execute();
+			// await trx
+			// 	.insertInto("conflict")
+			// 	.values(conflicts)
+			// 	// ignore if already exists
+			// 	.onConflict((oc) => oc.doNothing())
+			// 	.execute();
 		}
 
 		for (const [fileId, fileData] of Object.entries(changesPerFile)) {
 			// update the file data with the applied changes
-			await trx
-				.updateTable("file_internal")
-				.set("data", fileData)
-				.where("id", "=", fileId)
-				.execute();
+			await withSkipChangeQueue(trx, async (trx) => {
+				await trx
+					.updateTable("file")
+					.set("data", fileData)
+					.where("id", "=", fileId)
+					.execute();
+			});
 		}
 
 		// copy edges
 		if (sourceEdges.length > 0) {
 			await trx
-				.insertInto("change_graph_edge")
+				.insertInto("change_edge")
 				.values(sourceEdges)
 				// ignore if already exists
 				.onConflict((oc) => oc.doNothing())

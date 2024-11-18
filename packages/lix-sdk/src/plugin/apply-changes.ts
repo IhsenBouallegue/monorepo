@@ -1,3 +1,4 @@
+import { withSkipChangeQueue } from "../change-queue/with-skip-change-queue.js";
 import type { Change } from "../database/schema.js";
 import type { Lix } from "../lix/open-lix.js";
 
@@ -7,12 +8,12 @@ import type { Lix } from "../lix/open-lix.js";
  * Calls the `applyChanges` method of the corresponding plugin for each change.
  * **Carefull**, the changes are not validated before applying them. It is up to
  * the caller to ensure that the changes are valid. Usually, only the leaf changes
- * of a given branch should be applied.
+ * of a given version should be applied.
  *
  * @example
  *   ```ts
  *   const changes = await lix.db.selectFrom("change")
- *      .where(changeIsLeafInBranch(currentBranch))
+ *      .where(changeIsLeafInVersion(currentVersion))
  *      .selectAll()
  *      .execute();
  *
@@ -64,14 +65,14 @@ export async function applyChanges(args: {
 					file,
 					changes,
 				});
-				await trx
-					// avoiding the change queue here
-					// which is not duplicate tolerant
-					// yet. see https://linear.app/opral/issue/LIXDK-114/make-diff-and-change-generation-fault-tolerant
-					.updateTable("file_internal")
-					.set({ data: fileData })
-					.where("id", "=", fileId)
-					.execute();
+
+				await withSkipChangeQueue(trx, async (trx) => {
+					await trx
+						.updateTable("file")
+						.set({ data: fileData })
+						.where("id", "=", fileId)
+						.execute();
+				});
 			}
 		}
 	};

@@ -2,6 +2,7 @@ import { createInMemoryDatabase } from "sqlite-wasm-kysely";
 import { test, expect } from "vitest";
 import { initDb } from "./init-db.js";
 import { validate } from "uuid";
+import { mockChange } from "../change/mock-change.js";
 
 test("file ids should default to uuid", async () => {
 	const sqlite = await createInMemoryDatabase({
@@ -9,9 +10,20 @@ test("file ids should default to uuid", async () => {
 	});
 	const db = initDb({ sqlite });
 
+	// init the trigger function (usually defined by lix only)
+	sqlite.createFunction({
+		name: "triggerChangeQueue",
+		arity: 0,
+		// @ts-expect-error - dynamic function
+		xFunc: () => {},
+	});
+
 	const file = await db
-		.insertInto("file_internal")
-		.values({ path: "/mock", data: new Uint8Array() })
+		.insertInto("file")
+		.values({
+			path: "/mock",
+			data: new Uint8Array(),
+		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
@@ -27,11 +39,11 @@ test("change ids should default to uuid", async () => {
 	const change = await db
 		.insertInto("change")
 		.values({
-			type: "file",
+			schema_key: "file",
 			entity_id: "value1",
 			file_id: "mock",
 			plugin_key: "mock-plugin",
-			snapshot_id: "sn1",
+			snapshot_id: "no-content",
 		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
@@ -102,6 +114,11 @@ test("an empty snapshot should default to the special 'no-content' snapshot to s
 		.values({
 			content: null,
 		})
+		.onConflict((oc) =>
+			oc.doUpdateSet((eb) => ({
+				content: eb.ref("excluded.content"),
+			})),
+		)
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
@@ -115,8 +132,17 @@ test("files should be able to have metadata", async () => {
 	});
 	const db = initDb({ sqlite });
 
+	sqlite.createFunction({
+		name: "triggerChangeQueue",
+		arity: 0,
+		// @ts-expect-error - dynamic function
+		xFunc: () => {
+			// console.log('test')
+		},
+	});
+
 	const file = await db
-		.insertInto("file_internal")
+		.insertInto("file")
 		.values({
 			path: "/mock.csv",
 			data: new Uint8Array(),
@@ -130,7 +156,7 @@ test("files should be able to have metadata", async () => {
 	expect(file.metadata?.primary_key).toBe("email");
 
 	const updatedFile = await db
-		.updateTable("file_internal")
+		.updateTable("file")
 		.where("path", "=", "/mock.csv")
 		.set({
 			metadata: {
@@ -151,7 +177,7 @@ test("change graph edges can't reference themselves", async () => {
 
 	await expect(
 		db
-			.insertInto("change_graph_edge")
+			.insertInto("change_edge")
 			.values({
 				parent_id: "change1",
 				child_id: "change1",
@@ -171,9 +197,20 @@ test("change set items must be unique", async () => {
 
 	await db
 		.insertInto("change_set")
-		.defaultValues()
+		.values({
+			id: "change-set-1",
+		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
+
+	await db
+		.insertInto("change")
+		.values(
+			mockChange({
+				id: "change-1",
+			}),
+		)
+		.execute();
 
 	await db
 		.insertInto("change_set_element")
@@ -183,7 +220,7 @@ test("change set items must be unique", async () => {
 		})
 		.execute();
 
-	await expect(
+	expect(
 		db
 			.insertInto("change_set_element")
 			.values({
@@ -244,61 +281,47 @@ test("the confirmed label should be created if it doesn't exist", async () => {
 	});
 });
 
-test("a default main branch should exist", async () => {
+test("a default main version should exist", async () => {
 	const sqlite = await createInMemoryDatabase({
 		readOnly: false,
 	});
 	const db = initDb({ sqlite });
 
-	const branch = await db
-		.selectFrom("branch")
+	const version = await db
+		.selectFrom("version")
 		.selectAll()
 		.where("name", "=", "main")
 		.executeTakeFirst();
 
-	expect(branch).toBeDefined();
+	expect(version).toBeDefined();
 });
 
-test("conflicts should not be able to reference themselves", async () => {
+test("re-opening the same database shouldn't lead to duplicate insertion of the current version", async () => {
 	const sqlite = await createInMemoryDatabase({
 		readOnly: false,
 	});
 	const db = initDb({ sqlite });
 
-	expect(
-		db
-			.insertInto("conflict")
-			.values({
-				change_id: "change1",
-				conflicting_change_id: "change1",
-			})
-			.returningAll()
-			.execute(),
-	).rejects.toThrowErrorMatchingInlineSnapshot(
-		`[SQLite3Error: SQLITE_CONSTRAINT_CHECK: sqlite3 result code 275: CHECK constraint failed: change_id != conflicting_change_id]`,
-	);
-});
-
-test("re-opening the same database shouldn't lead to duplicate insertion of the current branch", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
-
-	const newBranch = await db
-		.insertInto("branch")
-		.values({ name: "mock" })
+	const changeSet = await db
+		.insertInto("change_set")
+		.defaultValues()
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
-	await db.updateTable("current_branch").set({ id: newBranch.id }).execute();
+	const newversion = await db
+		.insertInto("version")
+		.values({ name: "mock", change_set_id: changeSet.id })
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	await db.updateTable("current_version").set({ id: newversion.id }).execute();
 
 	const db2 = initDb({ sqlite });
 
-	const currentBranch = await db2
-		.selectFrom("current_branch")
+	const currentversion = await db2
+		.selectFrom("current_version")
 		.selectAll()
 		.execute();
 
-	expect(currentBranch).toHaveLength(1);
+	expect(currentversion).toHaveLength(1);
 });

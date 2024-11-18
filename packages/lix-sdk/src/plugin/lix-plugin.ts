@@ -1,4 +1,8 @@
-import type { Change, LixFile, Snapshot } from "../database/schema.js";
+import type {
+	ExperimentalChangeSchema,
+	ExperimentalInferType,
+} from "../change-schema/types.js";
+import { type Change, type LixFile } from "../database/schema.js";
 import type { Lix } from "../lix/open-lix.js";
 
 // named lixplugin to avoid conflict with built-in plugin type
@@ -34,10 +38,6 @@ export type LixPlugin = {
 	 * Detects changes from the source lix that conflict with changes in the target lix.
 	 */
 	detectConflicts?: (args: {
-		sourceLix: LixReadonly;
-		targetLix: LixReadonly;
-	}) => Promise<DetectedConflict[]>;
-	detectConflictsV2?: (args: {
 		lix: LixReadonly;
 		changes: Array<Change>;
 	}) => Promise<DetectedConflict[]>;
@@ -52,33 +52,61 @@ export type LixPlugin = {
 	}) => Promise<{
 		fileData: LixFile["data"];
 	}>;
-	// TODO multiple resolution strategies should be reported to the user
-	// similar to fixable lint rules. We likely need to expose in
-	// detect conflicts how conflicts could potentially be resolved.
-	// `resolveConflict` would then be called with the selected strategy.
-	tryResolveConflict?: () => Promise<
-		{ success: true; change: Change } | { success: false }
-	>;
+	// // TODO multiple resolution strategies should be reported to the user
+	// // similar to fixable lint rules. We likely need to expose in
+	// // detect conflicts how conflicts could potentially be resolved.
+	// // `resolveConflict` would then be called with the selected strategy.
+	// tryResolveConflict?: () => Promise<
+	// 	{ success: true; change: Change } | { success: false }
+	// >;
 };
 
 /**
  * A detected change that lix ingests in to the database.
  *
- * If the snapshot is `undefined`, the change is considered to be a deletion.
+ * - If the `snapshot` is `undefined`, the change is considered to be a deletion.
+ * - The `schema` type can be narrowed by providing a change schema.
+ *
+ * @example
+ *   Type narrowing with a change schema:
+ *
+ *   ```
+ * 	 const FooV1Schema = {
+ *     key: "plugin-name-foo-v1",
+ *     type: "json",
+ *     schema: {
+ *       type: "object",
+ *       properties: {
+ *         name: { type: "string" },
+ * 		   }
+ *     }
+ *   } as const satisfies ChangeSchema;
+ *
+ *   const detectedChange: DetectedChange<typeof FooV1Schema>
+ *
+ *   detectedChange.snapshot.name // string
+ *   ```
  */
-export type DetectedChange = {
-	type: string;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DetectedChange<Schema extends ExperimentalChangeSchema = any> = {
 	entity_id: string;
+	schema: Omit<ExperimentalChangeSchema, "schema">;
 	/**
 	 * The change is considered a deletion if `snapshot` is `undefined`.
 	 */
-	snapshot?: Snapshot["content"];
+
+	snapshot?: ExperimentalInferType<Schema>;
 };
 
 export type DetectedConflict = {
-	change_id: string;
-	conflicting_change_id: string;
-	reason?: string;
+	/**
+	 * @see {ChangeConflict.key}
+	 */
+	key: string;
+	/**
+	 * The changes that are conflicting.
+	 */
+	conflictingChangeIds: Set<Change["id"]>;
 };
 
 export type LixReadonly = Pick<Lix, "plugin"> & {

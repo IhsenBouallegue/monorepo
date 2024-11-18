@@ -1,13 +1,15 @@
 import { Kysely, ParseJSONResultsPlugin } from "kysely";
 import { createDialect, type SqliteDatabase } from "sqlite-wasm-kysely";
-import { v4 } from "uuid";
+import { v7 as uuid_v7 } from "uuid";
 import { SerializeJsonPlugin } from "./serialize-json-plugin.js";
 import type { LixDatabaseSchema } from "./schema.js";
 import { applySchema } from "./apply-schema.js";
 import { sha256 } from "js-sha256";
 
-export function initDb(args: { sqlite: SqliteDatabase }) {
-	initDefaultValueFunctions({ sqlite: args.sqlite });
+export function initDb(args: {
+	sqlite: SqliteDatabase;
+}): Kysely<LixDatabaseSchema> {
+	initFunctions({ sqlite: args.sqlite });
 	applySchema({ sqlite: args.sqlite });
 	const db = new Kysely<LixDatabaseSchema>({
 		dialect: createDialect({
@@ -18,11 +20,11 @@ export function initDb(args: { sqlite: SqliteDatabase }) {
 	return db;
 }
 
-function initDefaultValueFunctions(args: { sqlite: SqliteDatabase }) {
+function initFunctions(args: { sqlite: SqliteDatabase }) {
 	args.sqlite.createFunction({
-		name: "uuid_v4",
+		name: "uuid_v7",
 		arity: 0,
-		xFunc: () => v4(),
+		xFunc: () => uuid_v7(),
 	});
 
 	args.sqlite.createFunction({

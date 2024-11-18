@@ -3,13 +3,12 @@ import type { Generated, Insertable, Selectable, Updateable } from "kysely";
 
 export type LixDatabaseSchema = {
 	file: LixFileTable;
-	change: ChangeTable;
-	file_internal: LixFileTable;
 	change_queue: ChangeQueueTable;
-	change_graph_edge: ChangeGraphEdgeTable;
-	conflict: ConflictTable;
+	change_edge: ChangeEdgeTable;
 	snapshot: SnapshotTable;
 	label: LabelTable;
+
+	change: ChangeTable;
 
 	// change set
 	change_set: ChangeSetTable;
@@ -20,10 +19,14 @@ export type LixDatabaseSchema = {
 	discussion: DiscussionTable;
 	comment: CommentTable;
 
-	// branch
-	current_branch: CurrentBranchTable;
-	branch: BranchTable;
-	branch_change_pointer: BranchChangePointerTable;
+	// version
+	current_version: CurrentVersionTable;
+	version: VersionTable;
+	version_change_conflict: VersionChangeConflictTable;
+
+	// change conflicts
+	change_conflict: ChangeConflictTable;
+	change_conflict_resolution: ChangeConflictResolutionTable;
 };
 
 export type ChangeQueueEntry = Selectable<ChangeQueueTable>;
@@ -31,10 +34,13 @@ export type NewChangeQueueEntry = Insertable<ChangeQueueTable>;
 export type ChangeQueueEntryUpdate = Updateable<ChangeQueueTable>;
 type ChangeQueueTable = {
 	id: Generated<number>;
-	path: string;
 	file_id: string;
-	metadata: Record<string, any> | null;
-	data: ArrayBuffer;
+	path_before: string | null;
+	path_after: string | null;
+	data_before: ArrayBuffer | null;
+	data_after: ArrayBuffer | null;
+	metadata_before: Record<string, any> | null;
+	metadata_after: Record<string, any> | null;
 };
 
 // named lix file to avoid conflict with built-in file type
@@ -65,14 +71,9 @@ type ChangeTable = {
 	 */
 	plugin_key: string;
 	/**
-	 * The type of change that was made.
-	 *
-	 * @example
-	 *   - "cell" for csv cell change
-	 *   - "message" for inlang message change
-	 *   - "user" for a user change
+	 * The schema key that the change refers to.
 	 */
-	type: string;
+	schema_key: string;
 	snapshot_id: string;
 	/**
 	 * The time the change was created.
@@ -80,9 +81,9 @@ type ChangeTable = {
 	created_at: Generated<string>;
 };
 
-export type ChangeGraphEdge = Selectable<ChangeGraphEdgeTable>;
-export type NewChangeGraphEdge = Insertable<ChangeGraphEdgeTable>;
-type ChangeGraphEdgeTable = {
+export type ChangeGraphEdge = Selectable<ChangeEdgeTable>;
+export type NewChangeGraphEdge = Insertable<ChangeEdgeTable>;
+type ChangeEdgeTable = {
 	parent_id: string;
 	child_id: string;
 };
@@ -101,23 +102,6 @@ type SnapshotTable = {
 	 *   - For an inlang message change, the value would be the new message.
 	 */
 	content: Record<string, any> | null;
-};
-
-export type Conflict = Selectable<ConflictTable>;
-export type NewConflict = Insertable<ConflictTable>;
-export type ConflictUpdate = Updateable<ConflictTable>;
-type ConflictTable = {
-	change_id: string;
-	conflicting_change_id: string;
-	metadata: Record<string, any> | null;
-	reason: string | null;
-	/**
-	 * The change id that the conflict was resolved with.
-	 *
-	 * Can be the change_id, conflicting_change_id, or another change_id
-	 * that resulted from a merge.
-	 */
-	resolved_change_id: string | null;
 };
 
 // ------ change sets ------
@@ -176,30 +160,80 @@ type ChangeSetLabelTable = {
 	label_id: string;
 };
 
-// ------ branches ------
+// ------ versiones ------
 
-export type Branch = Selectable<BranchTable>;
-export type NewBranch = Insertable<BranchTable>;
-export type BranchUpdate = Updateable<BranchTable>;
-type BranchTable = {
+export type Version = Selectable<VersionTable>;
+export type Newversion = Insertable<VersionTable>;
+export type VersionUpdate = Updateable<VersionTable>;
+type VersionTable = {
 	id: Generated<string>;
+	change_set_id: string;
 	name: string | null;
 };
 
-export type BranchChangePointer = Selectable<BranchChangePointerTable>;
-export type NewBranchChangePointer = Insertable<BranchChangePointerTable>;
-export type BranchChangePointerUpdate = Updateable<BranchChangePointerTable>;
-type BranchChangePointerTable = {
-	branch_id: string;
+export type VersionChangePointer = Selectable<VersionChangePointerTable>;
+export type NewVersionChangePointer = Insertable<VersionChangePointerTable>;
+export type VersionChangePointerUpdate = Updateable<VersionChangePointerTable>;
+type VersionChangePointerTable = {
+	version_id: string;
 	change_id: string;
 	change_file_id: string;
 	change_entity_id: string;
-	change_type: string;
+	change_schema_key: string;
 };
 
-export type CurrentBranch = Selectable<CurrentBranchTable>;
-export type NewCurrentBranch = Insertable<CurrentBranchTable>;
-export type CurrentBranchUpdate = Updateable<CurrentBranchTable>;
-type CurrentBranchTable = {
+export type VersionChangeConflict = Selectable<VersionChangeConflictTable>;
+export type NewversionChangeConflict = Insertable<VersionChangeConflictTable>;
+export type VersionChangeConflictUpdate =
+	Updateable<VersionChangeConflictTable>;
+type VersionChangeConflictTable = {
+	version_id: string;
+	change_conflict_id: string;
+};
+
+export type Currentversion = Selectable<CurrentVersionTable>;
+export type NewCurrentversion = Insertable<CurrentVersionTable>;
+export type CurrentversionUpdate = Updateable<CurrentVersionTable>;
+type CurrentVersionTable = {
 	id: string;
+};
+
+// export type versionTarget = Selectable<versionTargetTable>;
+// export type NewversionTarget = Insertable<versionTargetTable>;
+// export type versionTargetUpdate = Updateable<versionTargetTable>;
+// type versionTargetTable = {
+// 	source_version_id: string;
+// 	target_version_id: string;
+// };
+
+// -------- change conflicts --------
+
+export type ChangeConflict = Selectable<ChangeConflictTable>;
+export type NewChangeConflict = Insertable<ChangeConflictTable>;
+export type ChangeConflictUpdate = Updateable<ChangeConflictTable>;
+type ChangeConflictTable = {
+	id: Generated<string>;
+	/**
+	 * The key is used to identify the conflict.
+	 *
+	 * The key should be unique for the plugin and the conflict
+	 * to avoid duplicate conflict reports.
+	 *
+	 * @example
+	 *   - `csv-row-order-changed`
+	 *   - `inlang-message-bundle-foreign-key-violation`
+	 */
+	key: string;
+	change_set_id: string;
+};
+
+export type ChangeConflictResolution =
+	Selectable<ChangeConflictResolutionTable>;
+export type NewChangeConflictResolution =
+	Insertable<ChangeConflictResolutionTable>;
+export type ChangeConflictResolutionUpdate =
+	Updateable<ChangeConflictResolutionTable>;
+type ChangeConflictResolutionTable = {
+	change_conflict_id: string;
+	resolved_change_id: string;
 };

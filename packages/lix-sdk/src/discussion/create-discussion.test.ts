@@ -1,9 +1,10 @@
 import { expect, test } from "vitest";
 import { openLixInMemory } from "../lix/open-lix-in-memory.js";
 import { newLixFile } from "../lix/new-lix.js";
-import type { LixPlugin } from "../plugin/lix-plugin.js";
+import type { DetectedChange, LixPlugin } from "../plugin/lix-plugin.js";
 import { createDiscussion } from "./create-discussion.js";
 import { createChangeSet } from "../change-set/create-change-set.js";
+import { changeQueueSettled } from "../change-queue/change-queue-settled.js";
 
 const mockPlugin: LixPlugin = {
 	key: "mock-plugin",
@@ -11,12 +12,15 @@ const mockPlugin: LixPlugin = {
 	detectChanges: async ({ after }) => {
 		return [
 			{
-				type: "text",
+				schema: {
+					key: "text",
+					type: "json",
+				},
 				entity_id: "test",
 				snapshot: {
 					text: after ? new TextDecoder().decode(after.data) : undefined,
 				},
-			},
+			} satisfies DetectedChange,
 		];
 	},
 };
@@ -34,7 +38,7 @@ test("should be able to start a discussion on changes", async () => {
 		.values({ id: "test", path: "test.txt", data: enc.encode("test") })
 		.execute();
 
-	await lix.settled();
+	await changeQueueSettled({ lix });
 
 	const changes = await lix.db
 		.selectFrom("change")

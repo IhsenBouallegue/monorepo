@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import Dropzone from "./Dropzone.tsx";
 import { SlIconButton } from "@shoelace-style/shoelace/dist/react";
 import { useState } from "react";
-import { DEMO_FILE_IDS } from "../../helper/demo-lix-file/demoLixFile.ts";
 
 const filesAtom = atom(async (get) => {
 	get(withPollingAtom);
@@ -21,7 +20,7 @@ export default function FileExplorer() {
 	);
 
 	const handleDeleteFile = async (id: string) => {
-		await lix.db.deleteFrom("file_internal").where("id", "=", id).execute();
+		await lix.db.deleteFrom("file").where("id", "=", id).execute();
 	};
 
 	const handleDownload = async (fileId: string) => {

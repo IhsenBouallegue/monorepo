@@ -1,10 +1,7 @@
 import { expect, test } from "vitest";
-import {
-	detectChanges,
-	type DetectedCellChange,
-	type DetectedRowChange,
-	type DetectedSchemaDefinitionChange,
-} from "./detectChanges.js";
+import { detectChanges } from "./detectChanges.js";
+import type { DetectedChange } from "@lix-js/sdk";
+import { CellSchema } from "./schemas/cellSchema.js";
 
 test("it should not detect changes if the csv did not update", async () => {
 	const before = new TextEncoder().encode("Name,Age\nAnna,20\nPeter,50");
@@ -47,15 +44,15 @@ test("it should detect an insert", async () => {
 		},
 		{
 			entity_id: "Name|John|Name",
-			type: "csv-v2-cell",
+			type: "cell",
 			snapshot: { text: "John" },
 		},
 		{
 			entity_id: "Name|John|Age",
-			type: "csv-v2-cell",
+			type: "cell",
 			snapshot: { text: "30" },
 		},
-	] satisfies (DetectedRowChange | DetectedCellChange)[]);
+	] satisfies DetectedChange[]);
 });
 
 test("it should detect updates", async () => {
@@ -71,11 +68,11 @@ test("it should detect updates", async () => {
 
 	expect(detectedChanges).toEqual([
 		{
-			type: "csv-v2-cell",
+			type: "cell",
 			entity_id: "Name|Anna|Age",
 			snapshot: { text: "21" },
 		},
-	] satisfies (DetectedRowChange | DetectedCellChange)[]);
+	] satisfies DetectedChange[]);
 });
 
 test("it should detect a deletion", async () => {
@@ -90,14 +87,9 @@ test("it should detect a deletion", async () => {
 	});
 
 	expect(detectedChanges).toEqual([
-		{
-			entity_id: "Name|Peter",
-			type: "csv-v2-row",
-			snapshot: null,
-		},
-		{ entity_id: "Name|Peter|Name", type: "csv-v2-cell", snapshot: null },
-		{ entity_id: "Name|Peter|Age", type: "csv-v2-cell", snapshot: null },
-	] satisfies (DetectedRowChange | DetectedCellChange)[]);
+		{ entity_id: "Name|Peter|Name", type: "cell", snapshot: undefined },
+		{ entity_id: "Name|Peter|Age", type: "cell", snapshot: undefined },
+	] satisfies DetectedChange[]);
 });
 
 // throwing an error leads to abysmal UX on potentially every save
@@ -134,59 +126,19 @@ test("changing the unique column should lead to a new entity_id to avoid bugs", 
 
 	expect(detectedChanges).toEqual(
 		expect.arrayContaining([
-			// detect the deletion of old rows
-			{ entity_id: "Name|Anna", type: "csv-v2-row", snapshot: null },
-			{ entity_id: "Name|Peter", type: "csv-v2-row", snapshot: null },
-
-			// detect the insertion of the new unique column
-			{
-				entity_id: "Age|20",
-				type: "csv-v2-row",
-				snapshot: {
-					rowIndex: 0,
-					rowEntities: ["Age|20|Age", "Age|20|Name"].sort(),
-				},
-			},
-			{
-				entity_id: "Age|50",
-				type: "csv-v2-row",
-				snapshot: {
-					rowIndex: 1,
-					rowEntities: ["Age|50|Age", "Age|50|Name"].sort(),
-				},
-			},
 			// detect the deletion of the old unique column
-			{ entity_id: "Name|Anna|Name", type: "csv-v2-cell", snapshot: null },
-			{ entity_id: "Name|Anna|Age", type: "csv-v2-cell", snapshot: null },
-			{
-				entity_id: "Name|Peter|Name",
-				type: "csv-v2-cell",
-				snapshot: null,
-			},
-			{ entity_id: "Name|Peter|Age", type: "csv-v2-cell", snapshot: null },
+			{ entity_id: "Name|Anna|Name", type: "cell", snapshot: undefined },
+			{ entity_id: "Name|Anna|Age", type: "cell", snapshot: undefined },
+			{ entity_id: "Name|Peter|Name", type: "cell", snapshot: undefined },
+			{ entity_id: "Name|Peter|Age", type: "cell", snapshot: undefined },
+			// detect the insertion of the new unique column
 
-			{
-				entity_id: "Age|50|Name",
-				type: "csv-v2-cell",
-				snapshot: { text: "Peter" },
-			},
-			{
-				entity_id: "Age|50|Age",
-				type: "csv-v2-cell",
-				snapshot: { text: "50" },
-			},
+			{ entity_id: "Age|50|Name", type: "cell", snapshot: { text: "Peter" } },
+			{ entity_id: "Age|50|Age", type: "cell", snapshot: { text: "50" } },
 
-			{
-				entity_id: "Age|20|Name",
-				type: "csv-v2-cell",
-				snapshot: { text: "Anna" },
-			},
-			{
-				entity_id: "Age|20|Age",
-				type: "csv-v2-cell",
-				snapshot: { text: "20" },
-			},
-		] satisfies (DetectedRowChange | DetectedCellChange)[]),
+			{ entity_id: "Age|20|Name", type: "cell", snapshot: { text: "Anna" } },
+			{ entity_id: "Age|20|Age", type: "cell", snapshot: { text: "20" } },
+		]),
 	);
 });
 
