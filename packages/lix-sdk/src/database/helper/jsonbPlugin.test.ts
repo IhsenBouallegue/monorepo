@@ -1,4 +1,4 @@
-import { Kysely } from "kysely";
+import { Kysely, SelectAllNode, sql } from "kysely";
 import { createDialect, createInMemoryDatabase } from "sqlite-wasm-kysely";
 import { test, expect } from "vitest";
 import { JsonbPlugin } from "./jsonbPlugin.js";
@@ -7,7 +7,7 @@ test("parsing and serializing of jsonb should work", async () => {
 	type MockSchema = {
 		foo: {
 			id: string;
-			data: Record<string, any>;
+			data_json: Record<string, any>;
 		};
 	};
 	const database = await createInMemoryDatabase({
@@ -17,7 +17,7 @@ test("parsing and serializing of jsonb should work", async () => {
 	database.exec(`
     CREATE TABLE foo (
       id TEXT PRIMARY KEY,
-      data BLOB NOT NULL
+      data_json BLOB NOT NULL
     ) strict;  
   `);
 
@@ -25,14 +25,16 @@ test("parsing and serializing of jsonb should work", async () => {
 		dialect: createDialect({
 			database,
 		}),
-		plugins: [new JsonbPlugin({ database })],
+		plugins: [new JsonbPlugin({ database,
+			jsonBPostfix: "_json"
+		 })],
 	});
 
 	const foo = await db
 		.insertInto("foo")
 		.values({
 			id: "mock",
-			data: {
+			data_json: {
 				data: "baz",
 			},
 		})
@@ -41,7 +43,7 @@ test("parsing and serializing of jsonb should work", async () => {
 
 	expect(foo).toEqual({
 		id: "mock",
-		data: {
+		data_json: {
 			data: "baz",
 		},
 	});
@@ -49,7 +51,7 @@ test("parsing and serializing of jsonb should work", async () => {
 	const fooQuery2 = await db.selectFrom("foo").selectAll().executeTakeFirst();
 	expect(fooQuery2).toEqual({
 		id: "mock",
-		data: {
+		data_json: {
 			data: "baz",
 		},
 	});
@@ -59,7 +61,7 @@ test("upserts should be handled", async () => {
 	type MockSchema = {
 		foo: {
 			id: string;
-			data: Record<string, any>;
+			data_json: Record<string, any>;
 		};
 	};
 	const database = await createInMemoryDatabase({
@@ -69,7 +71,7 @@ test("upserts should be handled", async () => {
 	database.exec(`
     CREATE TABLE foo (
       id TEXT PRIMARY KEY,
-      data BLOB NOT NULL
+      data_json BLOB NOT NULL
     ) strict;  
   `);
 
@@ -80,6 +82,7 @@ test("upserts should be handled", async () => {
 		plugins: [
 			new JsonbPlugin({
 				database,
+				jsonBPostfix: '_json'
 			}),
 		],
 	});
@@ -88,7 +91,7 @@ test("upserts should be handled", async () => {
 		.insertInto("foo")
 		.values({
 			id: "mock",
-			data: {
+			data_json: {
 				bar: "baz",
 			},
 		})
@@ -97,14 +100,14 @@ test("upserts should be handled", async () => {
 
 	expect(foo).toEqual({
 		id: "mock",
-		data: {
+		data_json: {
 			bar: "baz",
 		},
 	});
 
 	const updatedFoo = {
 		id: "mock",
-		data: {
+		data_json: {
 			bar: "baz",
 			baz: "qux",
 		},
@@ -120,11 +123,12 @@ test("upserts should be handled", async () => {
 	expect(updatedFooResult).toEqual(updatedFoo);
 });
 
-test("storing json as text is supposed to fail to avoid heuristics if the json should be stored as blob or text", async () => {
+// this is what whe avoid using the column names
+test.skip("storing json as text is supposed to fail to avoid heuristics if the json should be stored as blob or text", async () => {
 	type MockSchema = {
 		foo: {
 			id: string;
-			data: Record<string, any>;
+			data_json: Record<string, any>;
 		};
 	};
 	const database = await createInMemoryDatabase({
@@ -134,7 +138,7 @@ test("storing json as text is supposed to fail to avoid heuristics if the json s
 	database.exec(`
     CREATE TABLE foo (
       id TEXT PRIMARY KEY,
-      data TEXT NOT NULL
+      data_json TEXT NOT NULL
     ) strict;  
   `);
 
@@ -142,7 +146,9 @@ test("storing json as text is supposed to fail to avoid heuristics if the json s
 		dialect: createDialect({
 			database,
 		}),
-		plugins: [new JsonbPlugin({ database })],
+		plugins: [new JsonbPlugin({ database,
+			jsonBPostfix: '_json'
+		 })],
 	});
 
 	expect(() =>
@@ -150,7 +156,7 @@ test("storing json as text is supposed to fail to avoid heuristics if the json s
 			.insertInto("foo")
 			.values({
 				id: "mock",
-				data: {
+				data_json: {
 					bar: "baz",
 				},
 			})
@@ -186,9 +192,7 @@ test("should not parse columns specified as nonJsonB", async () => {
 		plugins: [
 			new JsonbPlugin({
 				database,
-				nonJsonB: {
-					foo: ["data"],
-				},
+				jsonBPostfix: '_json'
 			}),
 		],
 	});
@@ -199,6 +203,7 @@ test("should not parse columns specified as nonJsonB", async () => {
 		}),
 	);
 
+	// foo insert - return type
 	const foo = await db
 		.insertInto("foo")
 		.values({
@@ -213,31 +218,42 @@ test("should not parse columns specified as nonJsonB", async () => {
 		data: encodedJson,
 	});
 
+	// foo select all
 	const fooQuery2 = await db.selectFrom("foo").selectAll().executeTakeFirst();
 	expect(fooQuery2).toEqual({
 		id: "mock",
 		data: encodedJson,
 	});
 
+
+	const results = await db
+		.selectFrom('foo')
+		.selectAll()
+		.select((eb) => [
+			sql.raw<Record<string, any>>('json(data)').as('data'),
+		])
+		.execute();
+		
+
+	// foo - table name with alias test
 	const aliasTableNameQuery = await db
 		.selectFrom("foo as test")
 		.selectAll()
 		.executeTakeFirst();
 	expect(aliasTableNameQuery).toEqual({
 		id: "mock",
-		data: {
-			data: "baz",
-		},
+		data: encodedJson,
 	});
 
+	// quering a non json colum as json column using aliase
 	const aliasColumnName = await db
 		.selectFrom("foo")
 		.select("id")
-		.select("data as test")
+		.select("data as test_json")
 		.executeTakeFirst();
 	expect(aliasColumnName).toEqual({
 		id: "mock",
-		test: {
+		test_json: {
 			data: "baz",
 		},
 	});

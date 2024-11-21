@@ -36,8 +36,8 @@ export async function applySchema(args: {
     data_after BLOB,
     path_before TEXT,
     path_after TEXT,
-    metadata_before BLOB,
-    metadata_after BLOB
+    metadata_before_JSON BLOB,
+    metadata_after_JSON BLOB
   ) STRICT;
 
   CREATE TRIGGER IF NOT EXISTS file_insert BEFORE INSERT ON file

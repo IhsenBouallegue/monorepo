@@ -15,21 +15,20 @@ import {
 } from "kysely";
 import type { SqliteDatabase } from "sqlite-wasm-kysely";
 
-type QueryId = PluginTransformQueryArgs["queryId"];
 
 export class JsonbPlugin implements KyselyPlugin {
-	#queryMeta = new WeakMap<QueryId, { tableName: string }>();
+	
 	#serializeJsonTransformer = new SerializeJsonbTransformer();
 	#parseJsonPlugin = new ParseJSONResultsPlugin();
 	#database: SqliteDatabase;
-	#nonJsonB: Record<string, string[]>;
+	#jsonBPostfix: string ;
 
 	constructor(args: {
 		database: SqliteDatabase;
-		nonJsonB?: Record<string, string[]>;
+		jsonBPostfix: string;
 	}) {
 		this.#database = args.database;
-		this.#nonJsonB = args.nonJsonB;
+		this.#jsonBPostfix = args.jsonBPostfix.toLocaleLowerCase();
 	}
 
 	/**
@@ -38,17 +37,6 @@ export class JsonbPlugin implements KyselyPlugin {
 	 * executed against the database.
 	 */
 	transformQuery(args: PluginTransformQueryArgs): RootOperationNode {
-		let tableName;
-		if ((args.node as any)?.into) {
-			tableName = (args.node as any)?.into?.table?.identifier?.name;
-		} else if ((args.node as any)?.from) {
-			// TODO this only works for one table in the from clause
-			tableName = (args.node as any)?.from?.froms?.[0]?.table?.identifier?.name;
-		}
-
-		if (tableName) {
-			this.#queryMeta.set(args.queryId, { tableName: tableName });
-		}
 		if (
 			args.node.kind === "InsertQueryNode" ||
 			args.node.kind === "UpdateQueryNode"
@@ -66,32 +54,30 @@ export class JsonbPlugin implements KyselyPlugin {
 	async transformResult(
 		args: PluginTransformResultArgs,
 	): Promise<QueryResult<UnknownRow>> {
-		const queriedTableName = this.#queryMeta.get(args.queryId)?.tableName;
-
+		
 		for (const row of args.result.rows) {
 			for (const key in row) {
-				// TODO this only works if one doesn't use aliases for column names
-				if (
-					queriedTableName &&
-					this.#nonJsonB?.[queriedTableName]?.includes(key)
-				) {
-					continue;
+				if (!key.toLocaleLowerCase().endsWith(this.#jsonBPostfix)) {
+					continue
 				}
-				if (
-					row[key] instanceof ArrayBuffer ||
+				if (!(row[key] instanceof ArrayBuffer) &&
 					// uint8array, etc
-					ArrayBuffer.isView(row[key])
-				) {
-					try {
-						const res = this.#database.exec(`SELECT json(?)`, {
-							returnValue: "resultRows",
-							bind: [row[key] as any],
-						});
+					!ArrayBuffer.isView(row[key])) {
+					throw new Error("ArrayBuffer expected for column: "+ key + " since it ends with ["+this.#jsonBPostfix+"]");
+				}
 
-						row[key] = JSON.parse(res[0] as any);
-					} catch {
-						// it's not a json binary
-					}
+				// TODO we could skip this if we combine it with teh selection transformation
+				try {
+					const res = this.#database.exec(`SELECT json(?)`, {
+						returnValue: "resultRows",
+						// eslint-disable-next-line @typescript-eslint/no-explicit-any -- we can't know the type here
+						bind: [row[key] as any],
+					});
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any -- we can't know the type here
+					row[key] = JSON.parse(res[0] as any);
+				} catch {
+					// it's not a json binary
+					throw new Error("Column "+key+" with json postfix: ["+this.#jsonBPostfix+"] is not a valid jsonb");
 				}
 			}
 		}
