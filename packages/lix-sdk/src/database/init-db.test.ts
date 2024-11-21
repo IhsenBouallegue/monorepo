@@ -71,6 +71,121 @@ test("snapshot ids should default to sha256", async () => {
 	expect(snapshot.id).toBe(jsonSha256(content));
 });
 
+test("semantically equal jsons should result in the same hash", async () => {
+	const sqlite = await createInMemoryDatabase({
+		readOnly: false,
+	});
+	const db = initDb({ sqlite });
+
+	const content = { 
+		b: "value", 
+		a: "value", 
+		c: 1.55, 
+		d: new Date(),
+	};
+
+	const content2 = { 
+		a: "value", 
+		b: "value", 
+		c: 1.55000, 
+		d: new Date(), 
+	};
+
+	const snapshot = await db
+		.insertInto("snapshot")
+		.values({
+			content,
+		})
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	
+	const sameSnapshot = await db
+		.insertInto("snapshot")
+		.values({
+			content: content2,
+		})
+		.onConflict((oc) =>
+			oc.doUpdateSet((eb) => ({
+				content: eb.ref("excluded.content"),
+			})),
+		)
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	expect(snapshot.id).toBe(sameSnapshot.id);
+});
+
+test("semantically different jsons should result in different same hashes", async () => {
+
+	const sqlite = await createInMemoryDatabase({
+		readOnly: false,
+	});
+	const db = initDb({ sqlite });
+
+	const arrayBiggerThan32kBit: any[] = [
+		"test"
+	]
+
+	arrayBiggerThan32kBit[4294967295] = "test2"
+	
+	const arrayOneEl = [
+		"test"
+	]
+
+	const arrayWithEmptyValus = [
+		"test",
+		"test2"
+	]
+	delete arrayWithEmptyValus[0];
+
+	const arrayWithNullValue = [
+		null,
+		"test2"
+	]
+
+	// console.log(array)
+
+	const probes = [
+		{ content1: { arr: [undefined, undefined, 2]}, content2: { arr: [null, null, 2] }, reason: "arrays with undefined values should throw" },
+		{ content1: { arr: arrayWithEmptyValus }, content2: { arr: arrayWithNullValue}, reason: "arrays with empty values should throw" },
+		{ content1: { nan: NaN }, content2: { nan: null }, reason: "NaN should throw and not equal be persisted as shapshot" },
+		{ content1: { inf: Infinity }, content2: { inf: null }, reason: "Infinity should throw and not equal be persisted as shapshot" },
+		{ content1: { arr: arrayBiggerThan32kBit }, content2: { arr: arrayOneEl }, reason: "Array not parsable should throw and not equal be persisted as shapshot" },
+	]
+
+	for (const probe of probes) {
+
+		let error = undefined
+		const snapshot = await db
+			.insertInto("snapshot")
+			.values({
+				content: probe.content1,
+			})
+		.returningAll()
+		.executeTakeFirstOrThrow().catch(e => error = e);
+
+		expect(error, probe.reason).toBeDefined()
+
+		// const sameSnapshot = await db
+		// 	.insertInto("snapshot")
+		// 	.values({
+		// 		content: probe.content2,
+		// 	})
+		// 	.onConflict((oc) =>
+		// 		oc.doUpdateSet((eb) => ({
+		// 			content: eb.ref("excluded.content"),
+		// 		})),
+		// 	)
+		// 	.returningAll()
+		// 	.executeTakeFirstOrThrow();
+
+		// expect(snapshot.id, probe.reason).not.toBe(sameSnapshot.id);
+	}
+
+	
+})
+
 test("inserting the same snapshot multiple times should be possible and not lead to duplicates (content addressable)", async () => {
 	const sqlite = await createInMemoryDatabase({
 		readOnly: false,
