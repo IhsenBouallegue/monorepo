@@ -13,6 +13,9 @@ export default defineConfig({
 			"Cross-Origin-Embedder-Policy": "*",
 		},
 	},
+	preview: {
+		port: 3007,
+	},
 	optimizeDeps: {
 		exclude: [
 			"@lix-js/sdk",

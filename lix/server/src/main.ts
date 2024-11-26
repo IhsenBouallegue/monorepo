@@ -1,6 +1,13 @@
 import express from "express";
 import compression from "compression";
+import path from "path";
 import { createProxyMiddleware } from "http-proxy-middleware";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+// Define __dirname for ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // --------------- SETUP -----------------
 
@@ -18,6 +25,15 @@ app.use(
     headers: {
       Connection: "keep-alive",
     },
+    onError(err, req, res) {
+      console.error("WebSocket error:", err);
+      res.writeHead(500, {
+        "Content-Type": "text/plain",
+      });
+      res.end(
+        "Something went wrong. And we are reporting a custom error message."
+      );
+    },
   })
 );
 
@@ -29,6 +45,7 @@ app.use(
     headers: {
       Connection: "keep-alive",
     },
+    ws: true,
   })
 );
 
@@ -40,6 +57,7 @@ app.use(
     headers: {
       Connection: "keep-alive",
     },
+    ws: true,
   })
 );
 
