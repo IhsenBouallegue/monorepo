@@ -7,6 +7,7 @@ export default defineConfig({
 	plugins: [react()],
 	envPrefix: "PUBLIC_",
 	server: {
+		port: 3007,
 		headers: {
 			"Cross-Origin-Opener-Policy": "*",
 			"Cross-Origin-Embedder-Policy": "*",
@@ -26,5 +27,5 @@ export default defineConfig({
 	},
 	build: {
 		target: "esnext",
-	}
+	},
 });
