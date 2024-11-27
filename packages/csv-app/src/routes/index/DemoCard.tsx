@@ -1,6 +1,6 @@
 import { SlButton } from "@shoelace-style/shoelace/dist/react";
 import { DEMO_CAP_TABLE_CSV_FILE_ID } from "../../helper/demo-lix-file/demoLixFile.ts";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 
 export const DemoCard = () => {
 	const navigate = useNavigate();

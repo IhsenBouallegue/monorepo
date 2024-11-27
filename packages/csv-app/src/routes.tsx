@@ -1,53 +1,30 @@
-import { RouteObject } from "react-router-dom";
-import EditorPage from "./routes/editor/Page.tsx";
-import IndexPage from "./routes/index/Page.tsx";
-import ChangesPage from "./routes/changes/Page.tsx";
-import ConflictsPage from "./routes/conflicts/Page.tsx";
-import RootLayout from "./layouts/RootLayout.tsx";
-import GraphPage from "./routes/graph/Page.tsx";
+import type { RouteConfig } from "@react-router/dev/routes";
 
-export const routes: RouteObject[] = [
+export default [
 	{
 		path: "/",
-		element: (
-			<RootLayout>
-				<IndexPage />
-			</RootLayout>
-		),
+		file: "./layouts/RootLayout.tsx",
+		children: [
+			{
+				index: true,
+				file: "./routes/index/Page.tsx",
+			},
+			{
+				path: "editor",
+				file: "./routes/editor/Page.tsx",
+			},
+			{
+				path: "changes",
+				file: "./routes/changes/Page.tsx",
+			},
+			{
+				path: "conflicts",
+				file: "./routes/conflicts/Page.tsx",
+			},
+			{
+				path: "graph",
+				file: "./routes/graph/Page.tsx",
+			},
+		],
 	},
-	{
-		path: "/editor",
-		element: (
-			<RootLayout>
-				<EditorPage />
-			</RootLayout>
-		),
-	},
-	{
-		path: "/changes",
-		element: (
-			// @ts-expect-error - type mismatch?
-			<RootLayout>
-				<ChangesPage />,
-			</RootLayout>
-		),
-	},
-	{
-		path: "/conflicts",
-		element: (
-			// @ts-expect-error - type mismatch?
-			<RootLayout>
-				<ConflictsPage />,
-			</RootLayout>
-		),
-	},
-	{
-		path: "/graph",
-		element: (
-			// @ts-expect-error - type mismatch?
-			<RootLayout>
-				<GraphPage />,
-			</RootLayout>
-		),
-	},
-];
+] satisfies RouteConfig;

@@ -1,6 +1,6 @@
 import { atom, useAtom } from "jotai";
 import { lixAtom, withPollingAtom } from "../../state.ts";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import Dropzone from "./Dropzone.tsx";
 import { SlIconButton } from "@shoelace-style/shoelace/dist/react";
 import { useState } from "react";

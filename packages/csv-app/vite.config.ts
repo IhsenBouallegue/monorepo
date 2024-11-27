@@ -1,10 +1,9 @@
-import { defineConfig } from "vite"
-import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
+import { reactRouter } from "@react-router/dev/vite";
 
-// https://vitejs.dev/config/
 export default defineConfig({
-	plugins: [react(), tailwindcss()],
+	plugins: [reactRouter(), tailwindcss()],
 	envPrefix: "PUBLIC_",
 	server: {
 		port: 3008,
@@ -12,9 +11,6 @@ export default defineConfig({
 			"Cross-Origin-Opener-Policy": "*",
 			"Cross-Origin-Embedder-Policy": "*",
 		},
-	},
-	preview: {
-		port: 3008,
 	},
 	build: {
 		target: "es2022",
