@@ -157,6 +157,18 @@ export async function applySchema(args: {
     FOREIGN KEY(change_id) REFERENCES change(id)
   ) STRICT;
 
+  CREATE TRIGGER IF NOT EXISTS prevent_update_change_set
+  BEFORE UPDATE ON change_set
+  BEGIN
+    SELECT RAISE(FAIL, 'Updates are not allowed on change_set');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS prevent_update_change_set_element
+  BEFORE UPDATE ON change_set_element
+  BEGIN
+    SELECT RAISE(FAIL, 'Updates are not allowed on change_set_element');
+  END;
+
   CREATE TABLE IF NOT EXISTS change_set_label (
     label_id TEXT NOT NULL,
     change_set_id TEXT NOT NULL,

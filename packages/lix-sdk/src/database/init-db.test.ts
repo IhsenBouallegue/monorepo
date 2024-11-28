@@ -360,3 +360,72 @@ test("invalid file paths should be rejected", async () => {
 	);
 });
 
+test("change set should not be updatable (immutable)", async () => {
+	const sqlite = await createInMemoryDatabase({
+		readOnly: false,
+	});
+	const db = initDb({ sqlite });
+
+	const changeSet = await db
+		.insertInto("change_set")
+		.values({
+			id: "immutable-change-set",
+		})
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	await expect(
+		db
+			.updateTable("change_set")
+			.set({ id: "new-id" })
+			.where("id", "=", changeSet.id)
+			.execute(),
+	).rejects.toThrowErrorMatchingInlineSnapshot(
+		`[SQLite3Error: SQLITE_CONSTRAINT_TRIGGER: sqlite3 result code 1811: Updates are not allowed on change_set]`,
+	);
+});
+
+test("change set elements should not be updatable (immutable)", async () => {
+	const sqlite = await createInMemoryDatabase({
+		readOnly: false,
+	});
+	const db = initDb({ sqlite });
+
+	const changeSet = await db
+		.insertInto("change_set")
+		.values({
+			id: "immutable-change-set",
+		})
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	const change = await db
+		.insertInto("change")
+		.values(
+			mockChange({
+				id: "change-immutable",
+			}),
+		)
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	const changeSetElement = await db
+		.insertInto("change_set_element")
+		.values({
+			change_set_id: changeSet.id,
+			change_id: change.id,
+		})
+		.returningAll()
+		.executeTakeFirstOrThrow();
+
+	await expect(
+		db
+			.updateTable("change_set_element")
+			.set({ change_id: "new-change-id" })
+			.where("change_set_id", "=", changeSetElement.change_set_id)
+			.where("change_id", "=", changeSetElement.change_id)
+			.execute(),
+	).rejects.toThrowErrorMatchingInlineSnapshot(
+		`[SQLite3Error: SQLITE_CONSTRAINT_TRIGGER: sqlite3 result code 1811: Updates are not allowed on change_set_element]`,
+	);
+});
