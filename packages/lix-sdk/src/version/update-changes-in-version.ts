@@ -4,14 +4,21 @@ import type { Lix } from "../lix/open-lix.js";
 /**
  * Updates the changes that are part of a version.
  *
- * This function will update the change_set_element table to point to the new changes.
+ * Creates a new change set under the hood and points
+ * the version to the new change set.
  */
 export async function updateChangesInVersion(args: {
 	lix: Pick<Lix, "db" | "plugin">;
-	version: Pick<Version, "id" | "change_set_id">;
+	version: Pick<Version, "id">;
 	changes: Change[];
 }): Promise<{ version: Version }> {
 	const executeInTransaction = async (trx: Lix["db"]) => {
+		// not relying on args.version.change_set_id because it might be stale
+		const version = await trx
+			.selectFrom("version")
+			.where("version.id", "=", args.version.id)
+			.select("change_set_id")
+			.executeTakeFirstOrThrow();
 		const newChangeSet = await trx
 			.insertInto("change_set")
 			.defaultValues()
@@ -25,11 +32,7 @@ export async function updateChangesInVersion(args: {
 				trx
 					.selectFrom("change_set_element")
 					.innerJoin("change", "change.id", "change_set_element.change_id")
-					.where(
-						"change_set_element.change_set_id",
-						"=",
-						args.version.change_set_id,
-					)
+					.where("change_set_element.change_set_id", "=", version.change_set_id)
 					.where((eb) =>
 						eb.not(
 							eb.or(
