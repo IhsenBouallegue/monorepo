@@ -11,7 +11,7 @@ test("the version change set should be updated", async () => {
 
 	const version1 = await createVersion({ lix, name: "version1" });
 
-	const changes = await lix.db
+	const changes1 = await lix.db
 		.insertInto("change")
 		.values({
 			id: "change-1",
@@ -24,28 +24,29 @@ test("the version change set should be updated", async () => {
 		.returningAll()
 		.execute();
 
-	await updateChangesInVersion({
+	// inserting the same changes in both versions
+	const { version: version0Updated } = await updateChangesInVersion({
 		lix,
 		version: version0,
-		changes,
+		changes: changes1,
 	});
 
 	// version 1 should remain as is
-	await updateChangesInVersion({
+	const { version: version1Updated } = await updateChangesInVersion({
 		lix,
 		version: version1,
-		changes,
+		changes: changes1,
 	});
 
 	const version0Changes0 = await lix.db
 		.selectFrom("change")
-		.where(changeInVersion(version0))
+		.where(changeInVersion(version0Updated))
 		.selectAll()
 		.execute();
 
 	const version1Changes0 = await lix.db
 		.selectFrom("change")
-		.where(changeInVersion(version1))
+		.where(changeInVersion(version1Updated))
 		.selectAll()
 		.execute();
 
@@ -68,18 +69,20 @@ test("the version change set should be updated", async () => {
 		.returningAll()
 		.execute();
 
-	await updateChangesInVersion({
+	// version 0 is updated
+	const { version: version0Updated2 } = await updateChangesInVersion({
 		lix,
 		version: version0,
 		changes: changes2,
 	});
 
+	// version 0 should contain one change for the
+	// entity_id value1, schema_key file, file_id mock
 	const version0Changes1 = await lix.db
 		.selectFrom("change")
-		.where(changeInVersion(version0))
+		.where(changeInVersion(version0Updated2))
 		.selectAll()
 		.execute();
-
 	// the head of the change is updated to change-2
 	expect(version0Changes1.length).toBe(1);
 	expect(version0Changes1[0]?.id).toBe("change-2");
@@ -98,21 +101,21 @@ test("the version change set should be updated", async () => {
 		.returningAll()
 		.execute();
 
-	await updateChangesInVersion({
+	const { version: version0Updated3 } = await updateChangesInVersion({
 		lix,
-		version: version0,
+		version: version0Updated2,
 		changes: changes3,
 	});
 
 	const version0Changes2 = await lix.db
 		.selectFrom("change")
-		.where(changeInVersion(version0))
+		.where(changeInVersion(version0Updated3))
 		.selectAll()
 		.execute();
 
 	const version1Changes1 = await lix.db
 		.selectFrom("change")
-		.where(changeInVersion(version1))
+		.where(changeInVersion(version1Updated))
 		.selectAll()
 		.execute();
 

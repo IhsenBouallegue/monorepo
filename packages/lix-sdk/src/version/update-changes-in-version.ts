@@ -10,58 +10,72 @@ export async function updateChangesInVersion(args: {
 	lix: Pick<Lix, "db" | "plugin">;
 	version: Pick<Version, "id" | "change_set_id">;
 	changes: Change[];
-}): Promise<void> {
+}): Promise<{ version: Version }> {
 	const executeInTransaction = async (trx: Lix["db"]) => {
-		for (const change of args.changes ?? []) {
-			// Change for the same entity_id, schema_key and file_id should be unique
-			const existingEntityChange = await trx
-				.selectFrom("change")
-				.innerJoin(
-					"change_set_element",
-					"change.id",
-					"change_set_element.change_id",
-				)
-				.where(
-					"change_set_element.change_set_id",
-					"=",
-					args.version.change_set_id,
-				)
-				.where("change.schema_key", "=", change.schema_key)
-				.where("change.entity_id", "=", change.entity_id)
-				.where("change.file_id", "=", change.file_id)
-				.selectAll()
-				.executeTakeFirst();
+		const newChangeSet = await trx
+			.insertInto("change_set")
+			.defaultValues()
+			.returningAll()
+			.executeTakeFirstOrThrow();
+		// Copy non-overlapping changes to the new change set
+		await trx
+			.insertInto("change_set_element")
+			.columns(["change_set_id", "change_id"])
+			.expression(
+				trx
+					.selectFrom("change_set_element")
+					.innerJoin("change", "change.id", "change_set_element.change_id")
+					.where(
+						"change_set_element.change_set_id",
+						"=",
+						args.version.change_set_id,
+					)
+					.where((eb) =>
+						eb.not(
+							eb.or(
+								args.changes.map((change) =>
+									eb.and([
+										eb("change.schema_key", "=", change.schema_key),
+										eb("change.entity_id", "=", change.entity_id),
+										eb("change.file_id", "=", change.file_id),
+									]),
+								),
+							),
+						),
+					)
+					.select([
+						(eb) => eb.val(newChangeSet.id).as("change_set_id"),
+						"change_set_element.change_id",
+					]),
+			)
+			.execute();
 
-			if (existingEntityChange) {
-				// update the existing pointer
-				await trx
-					.updateTable("change_set_element")
-					.set("change_id", change.id)
-					.where("change_set_id", "=", args.version.change_set_id)
-					.where("change_id", "=", existingEntityChange.id)
-					.execute();
-			} else {
-				// create a new pointer
-				await trx
-					.insertInto("change_set_element")
-					.values({
-						change_set_id: args.version.change_set_id,
-						change_id: change.id,
-					})
-					.execute();
-			}
-		}
+		// Insert the new changes
+		await trx
+			.insertInto("change_set_element")
+			.values(
+				args.changes.map((change) => ({
+					change_set_id: newChangeSet.id,
+					change_id: change.id,
+				})),
+			)
+			.execute();
 
-		// await updateChangeConflicts({
-		// 	lix: { ...args.lix, db: trx },
-		// 	version,
-		// });
+		return {
+			version: await trx
+				.updateTable("version")
+				.set({
+					change_set_id: newChangeSet.id,
+				})
+				.returningAll()
+				.executeTakeFirstOrThrow(),
+		};
 	};
 
 	if (args.lix.db.isTransaction) {
-		await executeInTransaction(args.lix.db);
+		return await executeInTransaction(args.lix.db);
 	} else {
-		await args.lix.db.transaction().execute(executeInTransaction);
+		return await args.lix.db.transaction().execute(executeInTransaction);
 	}
 
 	// await garbageCollectChangeConflicts({ lix: args.lix });
